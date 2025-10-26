@@ -10,7 +10,12 @@ on:
       - ".github/**"
 
 jobs:
+  lint-test-build:
+    name: Lint, Test, and Build
+    uses: ./.github/workflows/lint.yml
+
   release:
+    needs: lint-test-build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,32 +111,6 @@ jobs:
             echo "Creating release for v${{ steps.version.outputs.version }}"
           fi
 
-      - name: Update VERSION file
-        if: steps.check.outputs.should_release == 'true'
-        run: |
-          echo "${{ steps.version.outputs.version }}" > VERSION
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add VERSION
-          git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]" || echo "No changes to commit"
-
-      - name: Build binaries
-        if: steps.check.outputs.should_release == 'true'
-        run: |
-          # Build for multiple platforms
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-linux-amd64 .
-          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-linux-arm64 .
-          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-darwin-amd64 .
-          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-darwin-arm64 .
-          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-windows-amd64.exe .
-
-          # Create archives
-          tar -czf autoblog-ai-linux-amd64.tar.gz autoblog-ai-linux-amd64 config.yaml topics.csv templates/
-          tar -czf autoblog-ai-linux-arm64.tar.gz autoblog-ai-linux-arm64 config.yaml topics.csv templates/
-          tar -czf autoblog-ai-darwin-amd64.tar.gz autoblog-ai-darwin-amd64 config.yaml topics.csv templates/
-          tar -czf autoblog-ai-darwin-arm64.tar.gz autoblog-ai-darwin-arm64 config.yaml topics.csv templates/
-          zip autoblog-ai-windows-amd64.zip autoblog-ai-windows-amd64.exe config.yaml topics.csv templates/*
-
       - name: Generate changelog
         if: steps.check.outputs.should_release == 'true'
         id: changelog
@@ -152,8 +131,8 @@ jobs:
           FIXES=$(echo "$COMMITS" | grep "^- fix" || echo "")
           OTHERS=$(echo "$COMMITS" | grep -v "^- feat" | grep -v "^- fix" | grep -v "BREAKING" || echo "")
 
-          # Create changelog content
-          cat > CHANGELOG.md << EOF
+          # Create release notes for this version
+          cat > RELEASE_NOTES.md << EOF
           # What's Changed in v${{ steps.version.outputs.version }}
 
           ## Version Bump: ${{ steps.version.outputs.bump_type }}
@@ -161,7 +140,7 @@ jobs:
           EOF
 
           if [ -n "$BREAKING_CHANGES" ]; then
-            cat >> CHANGELOG.md << EOF
+            cat >> RELEASE_NOTES.md << EOF
           ### ⚠️ BREAKING CHANGES
           $BREAKING_CHANGES
 
@@ -169,7 +148,7 @@ jobs:
           fi
 
           if [ -n "$FEATURES" ]; then
-            cat >> CHANGELOG.md << EOF
+            cat >> RELEASE_NOTES.md << EOF
           ### ✨ Features
           $FEATURES
 
@@ -177,7 +156,7 @@ jobs:
           fi
 
           if [ -n "$FIXES" ]; then
-            cat >> CHANGELOG.md << EOF
+            cat >> RELEASE_NOTES.md << EOF
           ### 🐛 Bug Fixes
           $FIXES
 
@@ -185,14 +164,14 @@ jobs:
           fi
 
           if [ -n "$OTHERS" ]; then
-            cat >> CHANGELOG.md << EOF
+            cat >> RELEASE_NOTES.md << EOF
           ### 🔧 Other Changes
           $OTHERS
 
           EOF
           fi
 
-          cat >> CHANGELOG.md << EOF
+          cat >> RELEASE_NOTES.md << EOF
           ## Installation
 
           Download the appropriate binary for your platform:
@@ -217,13 +196,64 @@ jobs:
           **Full Changelog**: https://github.com/${{ github.repository }}/compare/$LAST_TAG...v${{ steps.version.outputs.version }}
           EOF
 
+          # Update cumulative CHANGELOG.md
+          if [ -f CHANGELOG.md ]; then
+            # Prepend new release to existing changelog
+            cat RELEASE_NOTES.md > CHANGELOG.tmp
+            echo "" >> CHANGELOG.tmp
+            echo "---" >> CHANGELOG.tmp
+            echo "" >> CHANGELOG.tmp
+            cat CHANGELOG.md >> CHANGELOG.tmp
+            mv CHANGELOG.tmp CHANGELOG.md
+          else
+            # First release, create new changelog
+            cat > CHANGELOG.md << 'HEADER'
+          # Changelog
+
+          All notable changes to this project will be documented in this file.
+
+          The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+          and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+          ---
+
+          HEADER
+            cat RELEASE_NOTES.md >> CHANGELOG.md
+          fi
+
+      - name: Build binaries
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-windows-amd64.exe .
+
+          # Create archives
+          tar -czf autoblog-ai-linux-amd64.tar.gz autoblog-ai-linux-amd64 config.yaml topics.csv templates/
+          tar -czf autoblog-ai-linux-arm64.tar.gz autoblog-ai-linux-arm64 config.yaml topics.csv templates/
+          tar -czf autoblog-ai-darwin-amd64.tar.gz autoblog-ai-darwin-amd64 config.yaml topics.csv templates/
+          tar -czf autoblog-ai-darwin-arm64.tar.gz autoblog-ai-darwin-arm64 config.yaml topics.csv templates/
+          zip autoblog-ai-windows-amd64.zip autoblog-ai-windows-amd64.exe config.yaml topics.csv templates/*
+
+      - name: Update VERSION file and CHANGELOG
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          echo "${{ steps.version.outputs.version }}" > VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION CHANGELOG.md
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]" || echo "No changes to commit"
+
       - name: Create Release
         if: steps.check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Release v${{ steps.version.outputs.version }}
-          body_path: CHANGELOG.md
+          body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
           files: |
@@ -235,7 +265,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push VERSION file update
+      - name: Push changes
         if: steps.check.outputs.should_release == 'true'
         run: |
           git push origin main
