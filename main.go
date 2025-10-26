@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -66,7 +67,7 @@ func main() {
 	log.Printf("Generating article about: %s", topic)
 
 	// Generate article
-	generatedArticle, err := generator.Generate(topic, history)
+	generatedArticle, err := generator.Generate(context.Background(), topic, history)
 	if err != nil {
 		log.Fatalf("Failed to generate article: %v", err)
 	}
@@ -91,7 +92,7 @@ func main() {
 
 	// Publish to Medium
 	log.Println("Publishing to Medium...")
-	publishedURL, err := publisher.Publish(generatedArticle)
+	publishedURL, err := publisher.Publish(context.Background(), generatedArticle)
 	if err != nil {
 		log.Fatalf("Failed to publish article: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -25,11 +26,18 @@ type Article struct {
 	PublishedAt time.Time
 }
 
-// Generator handles article generation using Claude API.
-type Generator struct {
+// Generator is an interface for generating articles using AI.
+type Generator interface {
+	Generate(ctx context.Context, topic string, history *storage.ArticleHistory) (*Article, error)
+}
+
+// claudeGenerator is the concrete implementation of Generator using Claude API.
+type claudeGenerator struct {
 	apiKey string
 	config *config.Config
 	client *http.Client
+	apiURL string
+	logger *slog.Logger
 }
 
 // PromptData contains data used to build article generation prompts.
@@ -45,22 +53,38 @@ type PromptData struct {
 }
 
 // NewGenerator creates a new article generator with the specified API key and configuration.
-func NewGenerator(apiKey string, cfg *config.Config) *Generator {
+func NewGenerator(apiKey string, cfg *config.Config) Generator {
 	timeout := time.Duration(cfg.AI.TimeoutSeconds) * time.Second
-	return &Generator{
+	logger := slog.Default().With("component", "article.generator")
+	return &claudeGenerator{
 		apiKey: apiKey,
 		config: cfg,
 		client: &http.Client{Timeout: timeout},
+		apiURL: "https://api.anthropic.com/v1/messages",
+		logger: logger,
 	}
 }
 
-// Generate creates a new article on the given topic, avoiding duplication based on article history.
-func (g *Generator) Generate(topic string, history *storage.ArticleHistory) (*Article, error) {
-	return g.GenerateWithContext(context.Background(), topic, history)
+// NewGeneratorWithLogger creates a new article generator with a custom logger.
+func NewGeneratorWithLogger(apiKey string, cfg *config.Config, logger *slog.Logger) Generator {
+	timeout := time.Duration(cfg.AI.TimeoutSeconds) * time.Second
+	return &claudeGenerator{
+		apiKey: apiKey,
+		config: cfg,
+		client: &http.Client{Timeout: timeout},
+		apiURL: "https://api.anthropic.com/v1/messages",
+		logger: logger.With("component", "article.generator"),
+	}
 }
 
-// GenerateWithContext creates a new article with context support for cancellation.
-func (g *Generator) GenerateWithContext(ctx context.Context, topic string, history *storage.ArticleHistory) (*Article, error) {
+// Generate creates a new article with context support for cancellation.
+func (g *claudeGenerator) Generate(ctx context.Context, topic string, history *storage.ArticleHistory) (*Article, error) {
+	logger := g.logger.With(
+		"topic", topic,
+		"previous_articles_count", len(history.Articles),
+	)
+	logger.InfoContext(ctx, "Starting article generation")
+
 	// Build context about previous articles
 	previousTitles := []string{}
 	for _, article := range history.Articles {
@@ -69,45 +93,74 @@ func (g *Generator) GenerateWithContext(ctx context.Context, topic string, histo
 		}
 	}
 
+	if len(previousTitles) > 0 {
+		logger.InfoContext(ctx, "Found previous articles on this topic",
+			"count", len(previousTitles),
+			"titles", previousTitles)
+	}
+
 	// Get topic details
 	topicDetails := g.config.GetTopicDetails(topic)
+	if topicDetails != nil {
+		logger.DebugContext(ctx, "Retrieved topic details",
+			"description", topicDetails.Description,
+			"keywords", topicDetails.Keywords)
+	} else {
+		logger.WarnContext(ctx, "No topic details found for topic")
+	}
 
 	// Build the prompt using template
+	logger.DebugContext(ctx, "Building prompt from template")
 	prompt := g.buildPromptFromTemplate(topic, topicDetails, previousTitles)
 
 	// Get system prompt
 	systemPrompt := g.getSystemPrompt()
 
 	// Call Claude API with retry logic
+	logger.InfoContext(ctx, "Calling Claude API",
+		"model", g.config.AI.Model,
+		"max_tokens", g.config.AI.MaxTokens)
 	response, err := g.callClaudeAPIWithRetry(ctx, systemPrompt, prompt)
 	if err != nil {
+		logger.ErrorContext(ctx, "Failed to call Claude API",
+			"error", err)
 		return nil, fmt.Errorf("failed to call Claude API: %w", err)
 	}
 
 	// Parse the response
+	logger.DebugContext(ctx, "Parsing Claude API response")
 	article, err := g.parseResponse(response)
 	if err != nil {
+		logger.ErrorContext(ctx, "Failed to parse Claude response",
+			"error", err,
+			"response_length", len(response))
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	article.PublishedAt = time.Now()
+	logger.InfoContext(ctx, "Successfully generated article",
+		"title", article.Title,
+		"content_length", len(article.Content),
+		"tags", article.Tags)
+
 	return article, nil
 }
 
-func (g *Generator) buildPromptFromTemplate(topic string, topicDetails *config.TopicConfig, previousTitles []string) string {
+func (g *claudeGenerator) buildPromptFromTemplate(topic string, topicDetails *config.TopicConfig, previousTitles []string) string {
 	// Load template
 	templateContent, err := g.config.GetPromptTemplate()
 	if err != nil {
-		fmt.Printf("Warning: Failed to load prompt template from %s: %v\n", g.config.GetPromptTemplatePath(), err)
-		fmt.Println("Falling back to built-in template")
+		g.logger.Warn("Failed to load prompt template, falling back to built-in",
+			"template_path", g.config.GetPromptTemplatePath(),
+			"error", err)
 		return g.buildPromptFallback(topic, topicDetails, previousTitles)
 	}
 
 	// Parse template
 	tmpl, err := template.New("prompt").Parse(string(templateContent))
 	if err != nil {
-		fmt.Printf("Warning: Failed to parse prompt template: %v\n", err)
-		fmt.Println("Falling back to built-in template")
+		g.logger.Warn("Failed to parse prompt template, falling back to built-in",
+			"error", err)
 		return g.buildPromptFallback(topic, topicDetails, previousTitles)
 	}
 
@@ -131,15 +184,17 @@ func (g *Generator) buildPromptFromTemplate(topic string, topicDetails *config.T
 	// Execute template
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
-		fmt.Printf("Warning: Failed to execute prompt template: %v\n", err)
-		fmt.Println("Falling back to built-in template")
+		g.logger.Warn("Failed to execute prompt template, falling back to built-in",
+			"error", err)
 		return g.buildPromptFallback(topic, topicDetails, previousTitles)
 	}
 
+	g.logger.Debug("Successfully built prompt from template",
+		"prompt_length", buf.Len())
 	return buf.String()
 }
 
-func (g *Generator) buildPromptFallback(topic string, topicDetails *config.TopicConfig, previousTitles []string) string {
+func (g *claudeGenerator) buildPromptFallback(topic string, topicDetails *config.TopicConfig, previousTitles []string) string {
 	var prompt strings.Builder
 
 	prompt.WriteString("You are a technical writer creating an engaging article for Medium. ")
@@ -186,7 +241,7 @@ func (g *Generator) buildPromptFallback(topic string, topicDetails *config.Topic
 	return prompt.String()
 }
 
-func (g *Generator) getSystemPrompt() string {
+func (g *claudeGenerator) getSystemPrompt() string {
 	content, err := g.config.GetSystemPrompt()
 	if err != nil {
 		// Use default system prompt on error
@@ -196,23 +251,34 @@ func (g *Generator) getSystemPrompt() string {
 }
 
 // callClaudeAPIWithRetry calls the Claude API with exponential backoff retry logic.
-func (g *Generator) callClaudeAPIWithRetry(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+func (g *claudeGenerator) callClaudeAPIWithRetry(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	const maxRetries = 3
 	var lastErr error
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			// Exponential backoff: 2^attempt seconds (2s, 4s, 8s)
 			backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+			g.logger.InfoContext(ctx, "Retrying API call after backoff",
+				"attempt", attempt+1,
+				"max_attempts", maxRetries,
+				"backoff_seconds", backoff.Seconds())
+
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
+				g.logger.WarnContext(ctx, "Context cancelled during retry backoff",
+					"attempt", attempt+1)
 				return "", ctx.Err()
 			}
 		}
 
 		response, err := g.callClaudeAPI(ctx, systemPrompt, userPrompt)
 		if err == nil {
+			if attempt > 0 {
+				g.logger.InfoContext(ctx, "API call succeeded after retry",
+					"attempt", attempt+1)
+			}
 			return response, nil
 		}
 
@@ -220,10 +286,20 @@ func (g *Generator) callClaudeAPIWithRetry(ctx context.Context, systemPrompt, us
 
 		// Check if error is retryable (5xx, rate limit, timeout)
 		if !isRetryableError(err) {
+			g.logger.WarnContext(ctx, "Non-retryable error encountered",
+				"attempt", attempt+1,
+				"error", err)
 			return "", err
 		}
+
+		g.logger.WarnContext(ctx, "Retryable error encountered",
+			"attempt", attempt+1,
+			"error", err)
 	}
 
+	g.logger.ErrorContext(ctx, "Max retries exceeded",
+		"max_attempts", maxRetries,
+		"last_error", lastErr)
 	return "", fmt.Errorf("max retries exceeded: %w", lastErr)
 }
 
@@ -242,14 +318,14 @@ func isRetryableError(err error) bool {
 		strings.Contains(errStr, "connection refused")
 }
 
-func (g *Generator) callClaudeAPI(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+func (g *claudeGenerator) callClaudeAPI(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	// Get temperature value (default to 1.0 if nil)
 	temperature := 1.0
 	if g.config.AI.Temperature != nil {
 		temperature = *g.config.AI.Temperature
 	}
 
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"model":       g.config.AI.Model,
 		"max_tokens":  g.config.AI.MaxTokens,
 		"temperature": temperature,
@@ -264,11 +340,19 @@ func (g *Generator) callClaudeAPI(ctx context.Context, systemPrompt, userPrompt 
 
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
+		g.logger.ErrorContext(ctx, "Failed to marshal request body", "error", err)
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonBody))
+	g.logger.DebugContext(ctx, "Sending request to Claude API",
+		"url", g.apiURL,
+		"model", g.config.AI.Model,
+		"max_tokens", g.config.AI.MaxTokens,
+		"temperature", temperature)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", g.apiURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
+		g.logger.ErrorContext(ctx, "Failed to create HTTP request", "error", err)
 		return "", err
 	}
 
@@ -276,20 +360,34 @@ func (g *Generator) callClaudeAPI(ctx context.Context, systemPrompt, userPrompt 
 	req.Header.Set("x-api-key", g.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
+	start := time.Now()
 	resp, err := g.client.Do(req)
+	duration := time.Since(start)
+
 	if err != nil {
+		g.logger.ErrorContext(ctx, "HTTP request failed",
+			"error", err,
+			"duration_ms", duration.Milliseconds())
 		return "", err
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
+	g.logger.DebugContext(ctx, "Received response from Claude API",
+		"status_code", resp.StatusCode,
+		"duration_ms", duration.Milliseconds())
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		g.logger.ErrorContext(ctx, "Failed to read response body", "error", err)
 		return "", err
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		g.logger.ErrorContext(ctx, "API returned non-OK status",
+			"status_code", resp.StatusCode,
+			"response_body", string(body))
 		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -300,17 +398,24 @@ func (g *Generator) callClaudeAPI(ctx context.Context, systemPrompt, userPrompt 
 	}
 
 	if err := json.Unmarshal(body, &response); err != nil {
+		g.logger.ErrorContext(ctx, "Failed to unmarshal API response",
+			"error", err,
+			"response_body", string(body))
 		return "", err
 	}
 
 	if len(response.Content) == 0 {
+		g.logger.ErrorContext(ctx, "API response contains no content")
 		return "", fmt.Errorf("no content in response")
 	}
+
+	g.logger.DebugContext(ctx, "Successfully received content from API",
+		"response_length", len(response.Content[0].Text))
 
 	return response.Content[0].Text, nil
 }
 
-func (g *Generator) parseResponse(response string) (*Article, error) {
+func (g *claudeGenerator) parseResponse(response string) (*Article, error) {
 	// Try to extract JSON from response (in case there's extra text)
 	start := strings.Index(response, "{")
 	end := strings.LastIndex(response, "}")
@@ -337,3 +442,5 @@ func (g *Generator) parseResponse(response string) (*Article, error) {
 		Tags:    result.Tags,
 	}, nil
 }
+
+var _ Generator = &claudeGenerator{}
