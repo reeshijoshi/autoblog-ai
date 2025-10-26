@@ -5,9 +5,9 @@ on:
     branches:
       - main
     paths-ignore:
-      - 'README.md'
-      - 'docs/**'
-      - '.github/**'
+      - "README.md"
+      - "docs/**"
+      - ".github/**"
 
 jobs:
   release:
@@ -20,12 +20,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for changelog generation
+          fetch-depth: 0 # Fetch all history for changelog generation
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: "1.25.3"
 
       - name: Analyze commits and determine version bump
         id: version
