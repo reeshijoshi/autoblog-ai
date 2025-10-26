@@ -12,6 +12,10 @@ jobs:
   lint-test-build:
     name: Lint, Test, and Build
     uses: ./.github/workflows/lint.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
 
   release:
     needs: lint-test-build
