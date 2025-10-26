@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  autoblog-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    image: autoblog-ai:${VERSION:-latest}
+    container_name: autoblog-ai
+    restart: unless-stopped
+
+    # Environment variables (API keys should be set via .env file)
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MEDIUM_TOKEN=${MEDIUM_TOKEN}
+      - TZ=UTC
+
+    # Load environment variables from .env file
+    env_file:
+      - .env
+
+    # Volume mounts for configuration and generated content
+    volumes:
+      # Configuration files (read-only)
+      - ./config.yaml:/app/config.yaml:ro
+      - ./topics.csv:/app/topics.csv:ro
+      - ./templates:/app/templates:ro
+
+      # Generated articles (read-write)
+      - ./generated:/app/generated
+
+      # Article history (persistent)
+      - ./articles.json:/app/articles.json
+
+    # Override default command (remove --dry-run for production)
+    command: ["--dry-run"]
+
+    # Resource limits (optional but recommended)
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/autoblog-ai"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Optional: Schedule with cron-like service (uncomment if needed)
+  # scheduler:
+  #   image: mcuadros/ofelia:latest
+  #   container_name: autoblog-scheduler
+  #   depends_on:
+  #     - autoblog-ai
+  #   command: daemon --docker
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #   labels:
+  #     ofelia.enabled: "true"
+  #     ofelia.job-exec.autoblog.schedule: "@weekly"
+  #     ofelia.job-exec.autoblog.container: "autoblog-ai"
+  #     ofelia.job-exec.autoblog.command: "/app/autoblog-ai"
+
+networks:
+  default:
+    name: autoblog-network

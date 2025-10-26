@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoblog-ai
+  namespace: autoblog-ai
+  labels:
+    app: autoblog-ai
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  selector:
+    matchLabels:
+      app: autoblog-ai
+
+  template:
+    metadata:
+      labels:
+        app: autoblog-ai
+        version: v1
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      restartPolicy: Always
+
+      # Service account (if needed)
+      # serviceAccountName: autoblog-ai
+
+      containers:
+      - name: autoblog-ai
+        image: ghcr.io/yourusername/autoblog-ai:latest
+        imagePullPolicy: Always
+
+        # Run in dry-run mode by default (for manual testing)
+        args: ["--dry-run"]
+
+        # Environment variables
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: autoblog-ai-secrets
+              key: ANTHROPIC_API_KEY
+        - name: MEDIUM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: autoblog-ai-secrets
+              key: MEDIUM_TOKEN
+        - name: TZ
+          value: "UTC"
+
+        # Volume mounts
+        volumeMounts:
+        - name: config
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+          readOnly: true
+        - name: generated
+          mountPath: /app/generated
+
+        # Resource requests and limits
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+
+        # Liveness probe (checks if container is alive)
+        livenessProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /app/autoblog-ai
+          initialDelaySeconds: 5
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        # Readiness probe (checks if container is ready)
+        readinessProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /app/autoblog-ai
+          initialDelaySeconds: 3
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+      volumes:
+      - name: config
+        configMap:
+          name: autoblog-ai-config
+      - name: generated
+        emptyDir: {}
+      # Note: topics.csv and templates/ are baked into the Docker image
+
+      # Optional: Use persistent volume for generated articles
+      # - name: generated
+      #   persistentVolumeClaim:
+      #     claimName: autoblog-ai-pvc
+
+      # Optional: Image pull secrets for private registry
+      # imagePullSecrets:
+      # - name: ghcr-secret
+
+---
+# Optional: PersistentVolumeClaim for generated articles
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: autoblog-ai-pvc
+#   namespace: autoblog-ai
+# spec:
+#   accessModes:
+#   - ReadWriteOnce
+#   resources:
+#     requests:
+#       storage: 1Gi
+#   storageClassName: standard

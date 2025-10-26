@@ -1,0 +1,70 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+autoblog-ai
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Dependencies
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment and secrets
+.env
+.env.*
+
+# Generated articles (will be volume mounted)
+generated/
+
+# Docker files
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Kubernetes
+k8s/
+helm/
+
+# Makefile
+Makefile
+
+# Version control
+VERSION
+
+# Misc
+tmp/
+temp/
+*.log

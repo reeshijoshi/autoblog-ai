@@ -1,0 +1,37 @@
+# AutoBlog AI Configuration
+
+# API Keys (can be overridden by environment variables)
+# For security, it's recommended to use environment variables instead
+api_keys:
+  anthropic: ""  # ANTHROPIC_API_KEY env var (recommended)
+  medium: ""     # MEDIUM_TOKEN env var (recommended)
+
+# AI Model settings
+ai:
+  model: "claude-sonnet-4-20250514"  # Claude model to use
+  max_tokens: 8192                   # Maximum tokens for article generation
+  temperature: 1.0                   # Creativity level (0.0-1.0)
+  timeout_seconds: 120               # API timeout in seconds
+
+# Article style settings
+style:
+  tone: "professional"              # Options: professional, casual, technical, conversational
+  length: "medium"                  # Options: short (800-1200 words), medium (1500-2500 words), long (3000+ words)
+  target_audience: "intermediate"   # Options: beginners, intermediate, advanced
+  include_code: true                # Include code examples in articles
+
+# External file paths
+topics_file: "topics.csv"                       # Path to CSV file with topics
+prompt_template: "templates/article-prompt.md"  # Path to article prompt template
+system_prompt: "templates/system-prompt.md"     # Path to system prompt
+
+# NOTE: You can also define topics inline (YAML format) instead of using a CSV file.
+# If topics_file is specified, it will override any inline topics below.
+# To use inline topics, comment out or remove the topics_file line above.
+
+# Example inline topics (commented out since we're using CSV):
+# topics:
+#   - name: "Your Topic Name"
+#     description: "Description of what the article should focus on"
+#     keywords: ["keyword1", "keyword2", "keyword3"]
+#     weight: 2

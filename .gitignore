@@ -1,0 +1,40 @@
+# Binaries
+autoblog-ai
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+
+# Generated articles (optional - remove if you want to commit them)
+generated/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Article history (auto-committed by GitHub Actions)
+# Uncomment if you don't want to track this in git:
+# articles.json

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoblog-ai-config
+  namespace: autoblog-ai
+  labels:
+    app: autoblog-ai
+data:
+  config.yaml: |
+    # API keys are loaded from secrets (environment variables)
+    api_keys:
+      anthropic: ""  # Set via ANTHROPIC_API_KEY env var
+      medium: ""     # Set via MEDIUM_TOKEN env var
+
+    ai:
+      model: "claude-sonnet-4-20250514"
+      max_tokens: 8192
+      temperature: 1.0
+      timeout_seconds: 120
+
+    style:
+      tone: "professional"
+      length: "medium"
+      target_audience: "intermediate"
+      include_code: true
+
+    output:
+      format: "markdown"
+      directory: "generated"
+
+    system_prompt: "templates/system-prompt.md"
+    prompt_template: "templates/article-prompt.md"

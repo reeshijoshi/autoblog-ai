@@ -1,0 +1,52 @@
+name,description,keywords,weight
+"Advanced Go Concurrency Patterns","Explore complex concurrency patterns in Go including worker pools, fan-out/fan-in, and context propagation","goroutines,channels,context,sync,patterns",3
+"Building Production-Ready Go APIs","Best practices for building scalable, maintainable REST APIs in Go","REST,middleware,testing,deployment,monitoring",2
+"Go Performance Optimization","Techniques for profiling and optimizing Go applications","profiling,benchmarking,memory,CPU,optimization",2
+"Implementing RAG Systems from Scratch","Building Retrieval Augmented Generation systems with practical examples","RAG,embeddings,vector search,LLMs,AI",3
+"AI Agent Architecture Patterns","Design patterns for building autonomous AI agents","agents,LLM,orchestration,tools,reasoning",3
+"Prompt Engineering Best Practices","Advanced techniques for crafting effective prompts for LLMs","prompts,Claude,GPT,AI,best practices",2
+"GitHub Actions Advanced Workflows","Building complex CI/CD pipelines with GitHub Actions","CI/CD,automation,testing,deployment,workflows",2
+"Kubernetes for Go Developers","Deploying and managing Go applications on Kubernetes","kubernetes,containers,orchestration,deployment,Go",2
+"Observability in Microservices","Implementing logging, metrics, and tracing in distributed systems","observability,monitoring,tracing,logging,metrics",2
+"Building Scalable Event-Driven Architectures","Designing systems using event-driven patterns with message queues","events,messaging,architecture,scalability,patterns",2
+"Database Design for High Traffic Applications","Strategies for database optimization and scaling","database,optimization,scaling,indexing,performance",2
+"Introduction to Model Context Protocol (MCP)","Understanding and implementing MCP servers and clients","MCP,AI,integration,servers,protocol",3
+"WebAssembly for Go Developers","Compiling Go to WebAssembly and building web applications","WebAssembly,WASM,Go,web,performance",1
+"Building CLI Tools in Go","Design patterns and best practices for creating powerful command-line applications","CLI,cobra,TUI,terminal,tools",2
+"Go Generics in Practice","Real-world applications of Go generics and type parameters","generics,types,Go,programming,patterns",2
+"Distributed Systems with Go","Building fault-tolerant distributed systems using Go","distributed,consensus,raft,microservices,Go",3
+"Testing Strategies for Go Applications","Comprehensive testing approaches including unit, integration, and e2e tests","testing,mocking,TDD,Go,quality",2
+"gRPC Microservices in Go","Building high-performance microservices with gRPC and Protocol Buffers","gRPC,protobuf,microservices,RPC,Go",2
+"Docker Multi-Stage Builds for Go","Optimizing Docker images for Go applications","Docker,containers,optimization,Go,deployment",2
+"Implementing OAuth2 in Go","Building secure authentication with OAuth2 and OIDC","OAuth2,authentication,security,Go,OIDC",2
+"GraphQL APIs with Go","Building flexible APIs using GraphQL and Go","GraphQL,API,Go,schema,resolvers",2
+"Message Queues with RabbitMQ and Go","Implementing reliable message processing with RabbitMQ","RabbitMQ,messaging,queues,Go,async",2
+"Real-time Applications with WebSockets","Building real-time features using WebSockets in Go","WebSockets,real-time,Go,streaming,events",2
+"Building a Rate Limiter in Go","Implementing token bucket and leaky bucket algorithms","rate-limiting,algorithms,Go,distributed,Redis",3
+"Go Memory Management Deep Dive","Understanding Go's garbage collector and memory optimization","memory,GC,optimization,Go,performance",2
+"Building Blockchain with Go","Implementing a simple blockchain from scratch","blockchain,cryptocurrency,Go,consensus,cryptography",2
+"Serverless Functions with Go","Deploying Go functions on AWS Lambda and other platforms","serverless,Lambda,Go,cloud,functions",2
+"Building a Search Engine with Go","Implementing full-text search and indexing","search,indexing,Go,algorithms,performance",2
+"Time-Series Databases with Go","Working with InfluxDB and TimescaleDB in Go applications","time-series,InfluxDB,TimescaleDB,Go,metrics",2
+"Machine Learning Inference in Go","Deploying ML models for inference in Go services","ML,inference,Go,TensorFlow,ONNX",2
+"Building a CDN with Go","Creating a content delivery network from scratch","CDN,caching,Go,distributed,performance",2
+"Advanced SQL with Go","Complex queries, transactions, and database patterns","SQL,PostgreSQL,MySQL,Go,transactions",2
+"Implementing CQRS in Go","Command Query Responsibility Segregation patterns","CQRS,architecture,Go,patterns,DDD",2
+"Event Sourcing with Go","Building event-sourced systems and event stores","event-sourcing,CQRS,Go,architecture,patterns",2
+"Building a URL Shortener","Design and implementation of a scalable URL shortener service","URL-shortener,distributed,Go,system-design",2
+"API Gateway Patterns in Go","Building API gateways with authentication, rate limiting, and routing","API-gateway,Go,microservices,routing,middleware",2
+"Implementing Saga Pattern","Managing distributed transactions with saga pattern","saga,distributed,transactions,Go,microservices",2
+"Building a Job Queue System","Implementing background job processing with workers","job-queue,workers,Go,async,background-jobs",2
+"Vector Databases and Go","Working with vector databases for AI applications","vector-db,embeddings,AI,Go,similarity-search",3
+"Implementing Feature Flags","Dynamic feature toggling and A/B testing","feature-flags,A/B-testing,Go,deployment",2
+"Building a Metrics Collector","Creating a custom metrics collection system","metrics,monitoring,Go,observability,Prometheus",2
+"Chaos Engineering with Go","Implementing chaos engineering practices","chaos-engineering,resilience,Go,testing,fault-injection",1
+"Building a Distributed Cache","Implementing a distributed caching layer with Redis","cache,Redis,distributed,Go,performance",2
+"Stream Processing with Go","Real-time data stream processing","streaming,real-time,Go,Kafka,processing",2
+"Building a Proxy Server","Implementing reverse and forward proxies","proxy,networking,Go,HTTP,middleware",2
+"Container Orchestration Patterns","Beyond Kubernetes: custom orchestration","orchestration,containers,Go,distributed,scheduling",1
+"Building a DNS Server","Implementing a custom DNS server from scratch","DNS,networking,Go,protocols,server",1
+"Implementing Circuit Breakers","Fault tolerance with circuit breaker pattern","circuit-breaker,resilience,Go,patterns,fault-tolerance",2
+"Building a Load Balancer","Creating a custom load balancer with Go","load-balancer,networking,Go,distributed,algorithms",2
+"Zero-Downtime Deployments","Strategies for deploying without downtime","deployment,DevOps,Go,blue-green,canary",2
+"Building a Monitoring System","Creating a custom monitoring and alerting system","monitoring,alerting,Go,observability,metrics",2

@@ -1,0 +1,103 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: autoblog-ai
+  namespace: autoblog-ai
+  labels:
+    app: autoblog-ai
+spec:
+  # Run every Sunday at 10:00 AM UTC (weekly)
+  schedule: "0 10 * * 0"
+
+  # Keep last 3 successful and 1 failed job for debugging
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  # Prevent concurrent runs
+  concurrencyPolicy: Forbid
+
+  jobTemplate:
+    metadata:
+      labels:
+        app: autoblog-ai
+        component: cronjob
+    spec:
+      # Job timeout: 30 minutes
+      activeDeadlineSeconds: 1800
+
+      # Retry once if failed
+      backoffLimit: 1
+
+      template:
+        metadata:
+          labels:
+            app: autoblog-ai
+            component: cronjob
+        spec:
+          restartPolicy: OnFailure
+
+          # Service account (if needed for RBAC)
+          # serviceAccountName: autoblog-ai
+
+          containers:
+          - name: autoblog-ai
+            image: ghcr.io/yourusername/autoblog-ai:latest
+            imagePullPolicy: Always
+
+            # Remove --dry-run for production
+            args: []
+
+            # Environment variables from secrets
+            env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: autoblog-ai-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: MEDIUM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: autoblog-ai-secrets
+                  key: MEDIUM_TOKEN
+            - name: TZ
+              value: "UTC"
+
+            # Mount configuration (only config.yaml needs override)
+            volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: generated
+              mountPath: /app/generated
+
+            # Resource limits
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+            # Security context
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities:
+                drop:
+                - ALL
+
+          volumes:
+          - name: config
+            configMap:
+              name: autoblog-ai-config
+          - name: generated
+            emptyDir: {}
+          # Note: topics.csv and templates/ are baked into the Docker image
+
+          # Optional: Use image pull secrets if using private registry
+          # imagePullSecrets:
+          # - name: ghcr-secret

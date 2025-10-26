@@ -1,0 +1,256 @@
+name: Create Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '.github/**'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Analyze commits and determine version bump
+        id: version
+        run: |
+          # Get the last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Last tag: $LAST_TAG"
+
+          # Remove 'v' prefix for version manipulation
+          LAST_VERSION=${LAST_TAG#v}
+
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+
+          # Get commits since last tag
+          if [ "$LAST_TAG" = "v0.0.0" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+          fi
+
+          # Analyze commits for conventional commit patterns
+          BREAKING=false
+          FEAT=false
+          FIX=false
+
+          while IFS= read -r commit; do
+            # Check for breaking changes
+            if [[ "$commit" =~ ^[a-z]+(\([a-z0-9-]+\))?!:|BREAKING[[:space:]]CHANGE ]]; then
+              BREAKING=true
+            fi
+
+            # Check for features
+            if [[ "$commit" =~ ^feat(\([a-z0-9-]+\))?: ]]; then
+              FEAT=true
+            fi
+
+            # Check for fixes
+            if [[ "$commit" =~ ^fix(\([a-z0-9-]+\))?: ]]; then
+              FIX=true
+            fi
+          done <<< "$COMMITS"
+
+          # Determine version bump
+          if [ "$BREAKING" = true ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            echo "bump_type=major" >> $GITHUB_OUTPUT
+          elif [ "$FEAT" = true ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            echo "bump_type=minor" >> $GITHUB_OUTPUT
+          elif [ "$FIX" = true ]; then
+            PATCH=$((PATCH + 1))
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+          else
+            echo "bump_type=none" >> $GITHUB_OUTPUT
+            echo "No version-bumping commits found (feat/fix/BREAKING CHANGE)"
+          fi
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "last_tag=$LAST_TAG" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Check if release needed
+        id: check
+        run: |
+          if [ "${{ steps.version.outputs.bump_type }}" = "none" ]; then
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "No release needed - no feat/fix/breaking commits"
+          elif git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.version.outputs.version }} already exists"
+          else
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "Creating release for v${{ steps.version.outputs.version }}"
+          fi
+
+      - name: Update VERSION file
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          echo "${{ steps.version.outputs.version }}" > VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]" || echo "No changes to commit"
+
+      - name: Build binaries
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.Version=${{ steps.version.outputs.version }}" -o autoblog-ai-windows-amd64.exe .
+
+          # Create archives
+          tar -czf autoblog-ai-linux-amd64.tar.gz autoblog-ai-linux-amd64 config.yaml topics.csv templates/
+          tar -czf autoblog-ai-linux-arm64.tar.gz autoblog-ai-linux-arm64 config.yaml topics.csv templates/
+          tar -czf autoblog-ai-darwin-amd64.tar.gz autoblog-ai-darwin-amd64 config.yaml topics.csv templates/
+          tar -czf autoblog-ai-darwin-arm64.tar.gz autoblog-ai-darwin-arm64 config.yaml topics.csv templates/
+          zip autoblog-ai-windows-amd64.zip autoblog-ai-windows-amd64.exe config.yaml topics.csv templates/*
+
+      - name: Generate changelog
+        if: steps.check.outputs.should_release == 'true'
+        id: changelog
+        run: |
+          LAST_TAG="${{ steps.version.outputs.last_tag }}"
+
+          if [ "$LAST_TAG" = "v0.0.0" ]; then
+            echo "First release - including all commits"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "Generating changelog from $LAST_TAG to HEAD"
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges | grep -v "skip ci" || echo "- Initial release")
+          fi
+
+          # Categorize commits
+          BREAKING_CHANGES=$(echo "$COMMITS" | grep -E "^- [a-z]+(\([a-z0-9-]+\))?!:|BREAKING CHANGE" || echo "")
+          FEATURES=$(echo "$COMMITS" | grep "^- feat" || echo "")
+          FIXES=$(echo "$COMMITS" | grep "^- fix" || echo "")
+          OTHERS=$(echo "$COMMITS" | grep -v "^- feat" | grep -v "^- fix" | grep -v "BREAKING" || echo "")
+
+          # Create changelog content
+          cat > CHANGELOG.md << EOF
+          # What's Changed in v${{ steps.version.outputs.version }}
+
+          ## Version Bump: ${{ steps.version.outputs.bump_type }}
+
+          EOF
+
+          if [ -n "$BREAKING_CHANGES" ]; then
+            cat >> CHANGELOG.md << EOF
+          ### ⚠️ BREAKING CHANGES
+          $BREAKING_CHANGES
+
+          EOF
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            cat >> CHANGELOG.md << EOF
+          ### ✨ Features
+          $FEATURES
+
+          EOF
+          fi
+
+          if [ -n "$FIXES" ]; then
+            cat >> CHANGELOG.md << EOF
+          ### 🐛 Bug Fixes
+          $FIXES
+
+          EOF
+          fi
+
+          if [ -n "$OTHERS" ]; then
+            cat >> CHANGELOG.md << EOF
+          ### 🔧 Other Changes
+          $OTHERS
+
+          EOF
+          fi
+
+          cat >> CHANGELOG.md << EOF
+          ## Installation
+
+          Download the appropriate binary for your platform:
+          - **Linux (amd64)**: \`autoblog-ai-linux-amd64.tar.gz\`
+          - **Linux (arm64)**: \`autoblog-ai-linux-arm64.tar.gz\`
+          - **macOS (Intel)**: \`autoblog-ai-darwin-amd64.tar.gz\`
+          - **macOS (Apple Silicon)**: \`autoblog-ai-darwin-arm64.tar.gz\`
+          - **Windows**: \`autoblog-ai-windows-amd64.zip\`
+
+          ## Quick Start
+
+          1. Extract the archive
+          2. Create a \`.env\` file with your API keys:
+             \`\`\`
+             ANTHROPIC_API_KEY=your_key
+             MEDIUM_TOKEN=your_token
+             \`\`\`
+          3. Run: \`./autoblog-ai --dry-run\`
+
+          See [README.md](https://github.com/${{ github.repository }}) for full documentation.
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/$LAST_TAG...v${{ steps.version.outputs.version }}
+          EOF
+
+      - name: Create Release
+        if: steps.check.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          files: |
+            autoblog-ai-linux-amd64.tar.gz
+            autoblog-ai-linux-arm64.tar.gz
+            autoblog-ai-darwin-amd64.tar.gz
+            autoblog-ai-darwin-arm64.tar.gz
+            autoblog-ai-windows-amd64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push VERSION file update
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          git push origin main
+
+      - name: Release created
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          echo "✅ Release v${{ steps.version.outputs.version }} created successfully!"
+          echo "📦 Type: ${{ steps.version.outputs.bump_type }}"
+          echo "🔗 View it at: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}"
+
+      - name: No release needed
+        if: steps.check.outputs.should_release == 'false'
+        run: |
+          echo "ℹ️  No release needed. Reasons:"
+          echo "   - No feat/fix/BREAKING commits, or"
+          echo "   - Version v${{ steps.version.outputs.version }} already exists, or"
+          echo "   - Only docs/chore commits"
